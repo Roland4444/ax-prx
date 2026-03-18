@@ -2,36 +2,34 @@ use axum::{
     extract::Request,
     http::StatusCode,
     middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::get,
+    response::Response,
+    routing::get,               // <-- добавлен импорт для get
     Router,
 };
 use axum_reverse_proxy::ReverseProxy;
-use std::collections::HashMap;
-use tower_http::validate_request::ValidateRequestHeaderLayer;
+// import можно удалить, если не используется; пока оставим закомментированным
+// use tower_http::validate_request::ValidateRequestHeaderLayer;
 
 const GLPI_UPSTREAM: &str = "https://glpi.upshepard.ru";
-const GLPI_PATH: &str = "/glpi"; 
+const GLPI_PATH: &str = "/glpi";
 
-// --- Наше приложение (то, что сейчас на Hunchentoot) ---
 async fn lisp_app_handler() -> &'static str {
-    "Это ваше приложение на Lisp (заглушка). Тут будет /chat и всё остальное."
+    "Это ваше приложение на Lisp (заглушка)."
 }
 
-#[derive(Clone)]
-struct AuthState {
-}
-
-async fn auth_middleware<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, StatusCode> {
+async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, StatusCode> {
+    // Извлекаем идентификатор пользователя (в реальности из куки или токена)
     let user = req
         .headers()
         .get("x-user-id")
         .and_then(|h| h.to_str().ok())
-        .unwrap_or("post_only");
+        .unwrap_or("post_only")
+        .to_string(); // копируем, чтобы не держать ссылку на req
 
+    // Добавляем заголовок REMOTE_USER для GLPI
     req.headers_mut().insert(
         "REMOTE_USER",
-        user.parse().unwrap()
+        user.parse().map_err(|_| StatusCode::BAD_REQUEST)?,
     );
 
     Ok(next.run(req).await)
@@ -39,9 +37,7 @@ async fn auth_middleware<B>(mut req: Request<B>, next: Next<B>) -> Result<Respon
 
 fn create_glpi_proxy() -> Router {
     let proxy = ReverseProxy::new(GLPI_PATH, GLPI_UPSTREAM);
-
     let proxy_router: Router = proxy.into();
-
     proxy_router.layer(middleware::from_fn(auth_middleware))
 }
 
