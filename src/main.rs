@@ -27,16 +27,16 @@ async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, Statu
     Ok(next.run(req).await)
 }
 
-fn create_glpi_proxy() -> Router {
-    // Прокси слушает путь /glpi и отправляет запросы на GLPI_UPSTREAM
-    let proxy = ReverseProxy::new("/glpi", GLPI_UPSTREAM);
-    let proxy_router: Router = proxy.into();
-    proxy_router.layer(middleware::from_fn(auth_middleware))
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = create_glpi_proxy();
+    // Создаём прокси с базовым путём "/glpi" (он будет удаляться перед отправкой на апстрим)
+    let proxy = ReverseProxy::new("/glpi", GLPI_UPSTREAM);
+    // Превращаем прокси в роутер и добавляем middleware
+    let proxy_router: Router = proxy.into();
+    let proxy_with_auth = proxy_router.layer(middleware::from_fn(auth_middleware));
+
+    // Монтируем прокси на путь /glpi
+    let app = Router::new().nest(GLPI_PATH, proxy_with_auth);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", PORT)).await?;
     println!("🚀 GLPI прокси запущен на http://localhost:{}", PORT);
