@@ -3,30 +3,27 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::Response,
-    routing::get,               // <-- добавлен импорт для get
+    routing::get,
     Router,
 };
 use axum_reverse_proxy::ReverseProxy;
-// import можно удалить, если не используется; пока оставим закомментированным
-// use tower_http::validate_request::ValidateRequestHeaderLayer;
 
 const GLPI_UPSTREAM: &str = "https://glpi.upshepard.ru";
 const GLPI_PATH: &str = "/glpi";
+const PORT: u16 = 11112;  // единый порт сервера
 
 async fn lisp_app_handler() -> &'static str {
     "Это ваше приложение на Lisp (заглушка)."
 }
 
 async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, StatusCode> {
-    // Извлекаем идентификатор пользователя (в реальности из куки или токена)
     let user = req
         .headers()
         .get("x-user-id")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("post_only")
-        .to_string(); // копируем, чтобы не держать ссылку на req
+        .to_string();
 
-    // Добавляем заголовок REMOTE_USER для GLPI
     req.headers_mut().insert(
         "REMOTE_USER",
         user.parse().map_err(|_| StatusCode::BAD_REQUEST)?,
@@ -48,10 +45,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/chat", get(lisp_app_handler))
         .merge(create_glpi_proxy());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:11111").await?;
-    println!("🚀 Сервер запущен на http://localhost:11111");
-    println!("➡️  Ваше приложение: http://localhost:11111/chat");
-    println!("➡️  GLPI через прокси: http://localhost:11111/glpi/ (с заголовком REMOTE_USER)");
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", PORT)).await?;
+    println!("🚀 Сервер запущен на http://localhost:{}", PORT);
+    println!("➡️  Основное приложение (заглушка): http://localhost:{}/", PORT);
+    println!("➡️  GLPI через прокси: http://localhost:{}{}/ (с заголовком REMOTE_USER)", PORT, GLPI_PATH);
 
     axum::serve(listener, app).await?;
     Ok(())
