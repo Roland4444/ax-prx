@@ -7,8 +7,6 @@ use axum::{
     Router,
 };
 use axum_reverse_proxy::ReverseProxy;
-use reqwest::Client;
-use std::sync::Arc;
 
 const GLPI_UPSTREAM: &str = "https://glpi.upshepard.ru";
 const GLPI_PATH: &str = "/glpi";
@@ -35,14 +33,8 @@ async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, Statu
 }
 
 fn create_glpi_proxy() -> Router {
-    // Создаём HTTP-клиент с игнорированием ошибок SSL
-    let client = Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .expect("Failed to create HTTP client");
-
-    // Базовый путь "/" означает, что прокси принимает пути, начинающиеся с "/"
-    let proxy = ReverseProxy::new("/", GLPI_UPSTREAM).with_client(Arc::new(client));
+    // Прокси слушает путь /glpi и отправляет запросы на GLPI_UPSTREAM
+    let proxy = ReverseProxy::new("/glpi", GLPI_UPSTREAM);
     let proxy_router: Router = proxy.into();
     proxy_router.layer(middleware::from_fn(auth_middleware))
 }
@@ -52,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(lisp_app_handler))
         .route("/chat", get(lisp_app_handler))
-        .nest(GLPI_PATH, create_glpi_proxy());
+        .merge(create_glpi_proxy());
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", PORT)).await?;
     println!("🚀 Сервер запущен на http://localhost:{}", PORT);
